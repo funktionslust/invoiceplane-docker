@@ -1,0 +1,158 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches:
+      - main
+      - development
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # Run weekly to catch new InvoicePlane releases
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      invoiceplane_version:
+        description: 'InvoicePlane version to build (e.g., 1.6.3 or development)'
+        required: false
+        default: ''
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  check-version:
+    name: Check for new InvoicePlane releases
+    runs-on: ubuntu-latest
+    outputs:
+      latest_version: ${{ steps.get_version.outputs.latest_version }}
+      should_build: ${{ steps.check_build.outputs.should_build }}
+    steps:
+      - name: Get latest InvoicePlane release
+        id: get_version
+        run: |
+          # Fetch latest stable release (excluding pre-releases)
+          LATEST=$(curl -s https://api.github.com/repos/InvoicePlane/InvoicePlane/releases | \
+            jq -r '[.[] | select(.prerelease == false and .draft == false)] | .[0].tag_name' | \
+            sed 's/^v//')
+          echo "latest_version=${LATEST}" >> $GITHUB_OUTPUT
+          echo "Latest InvoicePlane version: ${LATEST}"
+
+      - name: Check if build needed
+        id: check_build
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || \
+             [ "${{ github.event_name }}" = "push" ] || \
+             [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+
+  build-and-push:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - version: ${{ needs.check-version.outputs.latest_version }}
+            tags: |
+              type=raw,value=latest
+              type=raw,value=${{ needs.check-version.outputs.latest_version }}
+              type=raw,value=production
+          - version: development
+            tags: |
+              type=raw,value=development
+              type=raw,value=dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/invoiceplane
+          tags: ${{ matrix.tags }}
+          labels: |
+            org.opencontainers.image.title=InvoicePlane
+            org.opencontainers.image.description=Self-hosted open source invoicing application
+            org.opencontainers.image.vendor=Funktionslust
+            org.opencontainers.image.version=${{ matrix.version }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            INVOICEPLANE_VERSION=${{ matrix.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  test:
+    name: Test Docker Image
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build test image
+        run: |
+          docker compose build
+
+      - name: Start services
+        run: |
+          docker compose up -d
+
+      - name: Wait for services
+        run: |
+          timeout 120 bash -c 'until docker compose exec -T invoiceplane curl -f http://localhost/ > /dev/null 2>&1; do sleep 2; done'
+
+      - name: Check InvoicePlane health
+        run: |
+          docker compose ps
+          docker compose logs invoiceplane
+          curl -f http://localhost:8080/ || exit 1
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose down -v

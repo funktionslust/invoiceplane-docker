@@ -1,0 +1,43 @@
+services:
+  invoiceplane:
+    build: .
+    image: funktionslust/invoiceplane:latest
+    container_name: invoiceplane
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - TZ=UTC
+      - DB_HOST=mariadb
+      - DB_NAME=invoiceplane
+      - DB_USER=invoiceplane
+      - DB_PASSWORD=change_this_password
+      - PROXY_NETWORKS=172.16.0.0/12 10.0.0.0/8
+    volumes:
+      - invoiceplane_uploads:/var/www/html/uploads
+      - invoiceplane_logs:/var/www/html/application/logs
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+  mariadb:
+    image: mariadb:11.6
+    container_name: invoiceplane-db
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=change_this_root_password
+      - MYSQL_DATABASE=invoiceplane
+      - MYSQL_USER=invoiceplane
+      - MYSQL_PASSWORD=change_this_password
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  invoiceplane_uploads:
+  invoiceplane_logs:
+  mariadb_data:
