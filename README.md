@@ -63,7 +63,7 @@ Note: These are only set if empty. Setup wizard values take precedence.
 - `IP_DB_PASSWORD` - Database password
 - `IP_DB_DATABASE` - Database name
 - `IP_DB_PORT` - Database port (default: 3306)
-- `DB_PREFIX` - Table prefix (default: ip_)
+- `IP_DB_PREFIX` - Table prefix (default: ip_)
 
 **Security Settings:**
 - `X_FRAME_OPTIONS` - X-Frame-Options header (default: SAMEORIGIN)

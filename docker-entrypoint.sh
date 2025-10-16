@@ -229,7 +229,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
     'password' => '${IP_DB_PASSWORD}',
     'database' => '${IP_DB_DATABASE}',
     'dbdriver' => 'mysqli',
-    'dbprefix' => '${DB_PREFIX:-ip_}',
+    'dbprefix' => '${IP_DB_PREFIX:-ip_}',
     'pconnect' => FALSE,
     'db_debug' => FALSE,
     'cache_on' => FALSE,
