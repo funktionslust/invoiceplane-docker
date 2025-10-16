@@ -1,6 +1,6 @@
 FROM php:8.1-apache-bookworm
 
-LABEL maintainer="Funktionslust <support@funktionslust.de>" \
+LABEL maintainer="Funktionslust GmbH - Wolfgang Stark <info@funktionslust.digital>" \
       org.opencontainers.image.title="InvoicePlane" \
       org.opencontainers.image.description="Self-hosted open source invoicing application" \
       org.opencontainers.image.url="https://invoiceplane.com" \

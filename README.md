@@ -146,3 +146,7 @@ docker pull ghcr.io/funktionslust/invoiceplane-docker:development
 This Docker image configuration (Dockerfile, scripts, etc.) is licensed under the MIT License - see [LICENSE](LICENSE)
 
 InvoicePlane itself is licensed under its own MIT-style license - see [InvoicePlane LICENSE](https://github.com/InvoicePlane/InvoicePlane/blob/development/LICENSE.txt)
+
+---
+
+**Maintained by:** Funktionslust GmbH - Wolfgang Stark ([info@funktionslust.digital](mailto:info@funktionslust.digital))
