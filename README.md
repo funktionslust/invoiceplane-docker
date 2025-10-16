@@ -47,7 +47,7 @@ Access at `http://localhost:8080` and follow the setup wizard.
 
 - `PROXY_NETWORKS` - Space-separated list of trusted proxy IP ranges for X-Forwarded-For headers (default: "172.16.0.0/12 10.0.0.0/8")
 
-### InvoicePlane Configuration (ipconfig.php)
+### InvoicePlane Configuration
 
 **Application Settings:**
 - `IP_URL` - Base URL for InvoicePlane (e.g. https://invoice.example.com) - **Required for correct redirects**
@@ -56,21 +56,13 @@ Access at `http://localhost:8080` and follow the setup wizard.
 - `DISABLE_SETUP` - Disable setup wizard for security (default: false)
 - `REMOVE_INDEXPHP` - Remove index.php from URLs (default: false)
 
-**Database Settings (via ipconfig.php):**
+**Database Settings:**
 Note: These are only set if empty. Setup wizard values take precedence.
 - `IP_DB_HOSTNAME` - Database hostname
 - `IP_DB_USERNAME` - Database username
 - `IP_DB_PASSWORD` - Database password
 - `IP_DB_DATABASE` - Database name
 - `IP_DB_PORT` - Database port (default: 3306)
-
-**Legacy Database Settings (via database.php):**
-These are used for initial database configuration before setup wizard.
-- `DB_HOST` - Database hostname
-- `DB_USER` - Database username
-- `DB_PASSWORD` - Database password
-- `DB_NAME` - Database name
-- `DB_PORT` - Database port (default: 3306)
 - `DB_PREFIX` - Table prefix (default: ip_)
 
 **Security Settings:**

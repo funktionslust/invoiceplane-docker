@@ -214,7 +214,7 @@ setup_config() {
     if [ ! -f "${db_config}" ] || [ "${FORCE_CONFIG_UPDATE}" = "true" ]; then
         log "Setting up database configuration..."
 
-        if [ -n "${DB_HOST}" ] && [ -n "${DB_NAME}" ] && [ -n "${DB_USER}" ] && [ -n "${DB_PASSWORD}" ]; then
+        if [ -n "${IP_DB_HOSTNAME}" ] && [ -n "${IP_DB_DATABASE}" ] && [ -n "${IP_DB_USERNAME}" ] && [ -n "${IP_DB_PASSWORD}" ]; then
             cat > "${db_config}" << EOF
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
@@ -224,10 +224,10 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 
 \$db['default'] = array(
     'dsn'   => '',
-    'hostname' => '${DB_HOST}',
-    'username' => '${DB_USER}',
-    'password' => '${DB_PASSWORD}',
-    'database' => '${DB_NAME}',
+    'hostname' => '${IP_DB_HOSTNAME}',
+    'username' => '${IP_DB_USERNAME}',
+    'password' => '${IP_DB_PASSWORD}',
+    'database' => '${IP_DB_DATABASE}',
     'dbdriver' => 'mysqli',
     'dbprefix' => '${DB_PREFIX:-ip_}',
     'pconnect' => FALSE,
@@ -386,7 +386,10 @@ main() {
     configure_proxy_networks
 
     # Wait for database if configured
-    if [ -n "${DB_HOST}" ]; then
+    if [ -n "${IP_DB_HOSTNAME}" ]; then
+        # Set DB_HOST and DB_PORT for wait_for_db function
+        DB_HOST="${IP_DB_HOSTNAME}"
+        DB_PORT="${IP_DB_PORT:-3306}"
         wait_for_db
     fi
 

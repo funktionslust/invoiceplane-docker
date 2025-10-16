@@ -8,11 +8,12 @@ services:
       - "8080:80"
     environment:
       - TZ=UTC
-      - DB_HOST=mariadb
-      - DB_NAME=invoiceplane
-      - DB_USER=invoiceplane
-      - DB_PASSWORD=change_this_password
+      - IP_DB_HOSTNAME=mariadb
+      - IP_DB_DATABASE=invoiceplane
+      - IP_DB_USERNAME=invoiceplane
+      - IP_DB_PASSWORD=change_this_password
       - PROXY_NETWORKS=172.16.0.0/12 10.0.0.0/8
+      - INSTALL_EINVOICE_TEMPLATES=zugferdv23extended
     volumes:
       - invoiceplane_uploads:/var/www/html/uploads
       - invoiceplane_logs:/var/www/html/application/logs

@@ -130,12 +130,6 @@ RUN if [ "${INVOICEPLANE_VERSION}" = "development" ]; then \
     && mv /tmp/invoiceplane/*/* /var/www/html/ \
     && rm -rf /tmp/invoiceplane
 
-# Apply patches
-COPY patches/ /tmp/patches/
-RUN chmod +x /tmp/patches/*.sh \
-    && /tmp/patches/fix-glob-brace.sh \
-    && rm -rf /tmp/patches
-
 # Create necessary directories and set permissions
 RUN mkdir -p /var/www/html/uploads/archive \
     /var/www/html/uploads/customer_files \
@@ -145,10 +139,11 @@ RUN mkdir -p /var/www/html/uploads/archive \
     && find /var/www/html -type d -exec chmod 755 {} \; \
     && find /var/www/html -type f -exec chmod 644 {} \;
 
-# Copy entrypoint script and e-invoice download script
+# Copy entrypoint script and utility scripts
 COPY docker-entrypoint.sh /usr/local/bin/
 COPY scripts/download-einvoice-templates.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/download-einvoice-templates.sh
+COPY scripts/view-logs.sh /usr/local/bin/logs
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/download-einvoice-templates.sh /usr/local/bin/logs
 
 # Create volumes for persistent data
 VOLUME ["/var/www/html/uploads", "/var/www/html/application/logs"]
