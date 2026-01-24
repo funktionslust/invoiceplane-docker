@@ -8,12 +8,11 @@ LABEL maintainer="Funktionslust GmbH - Wolfgang Stark <info@funktionslust.digita
       org.opencontainers.image.vendor="Funktionslust"
 
 # Build arguments
-ARG INVOICEPLANE_VERSION=1.6.3
+ARG INVOICEPLANE_VERSION=""
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Environment variables
-ENV INVOICEPLANE_VERSION=${INVOICEPLANE_VERSION} \
-    TZ=UTC \
+ENV TZ=UTC \
     PHP_MEMORY_LIMIT=256M \
     PHP_UPLOAD_MAX_FILESIZE=32M \
     PHP_POST_MAX_SIZE=32M \
@@ -120,15 +119,28 @@ RUN a2enmod remoteip
 
 # Download and install InvoicePlane
 WORKDIR /tmp
-RUN if [ "${INVOICEPLANE_VERSION}" = "development" ]; then \
+RUN set -e; \
+    VERSION="${INVOICEPLANE_VERSION}"; \
+    if [ -z "$VERSION" ]; then \
+        echo "No version specified, fetching latest stable release..."; \
+        VERSION=$(wget -qO- https://api.github.com/repos/InvoicePlane/InvoicePlane/releases | \
+            grep '"tag_name":' | grep -vE 'beta|rc|alpha' | head -1 | sed 's/.*"v\([^"]*\)".*/\1/'); \
+        if [ -z "$VERSION" ]; then \
+            echo "ERROR: Failed to detect latest version from GitHub API"; \
+            exit 1; \
+        fi; \
+        echo "Latest version: $VERSION"; \
+    fi; \
+    if [ "$VERSION" = "development" ]; then \
         wget -q https://github.com/InvoicePlane/InvoicePlane/archive/refs/heads/development.zip -O invoiceplane.zip; \
     else \
-        wget -q https://github.com/InvoicePlane/InvoicePlane/releases/download/v${INVOICEPLANE_VERSION}/v${INVOICEPLANE_VERSION}.zip -O invoiceplane.zip; \
+        wget -q "https://github.com/InvoicePlane/InvoicePlane/releases/download/v${VERSION}/v${VERSION}.zip" -O invoiceplane.zip; \
     fi \
     && unzip -q invoiceplane.zip -d /tmp/invoiceplane \
     && rm invoiceplane.zip \
     && mv /tmp/invoiceplane/*/* /var/www/html/ \
-    && rm -rf /tmp/invoiceplane
+    && rm -rf /tmp/invoiceplane \
+    && echo "$VERSION" > /var/www/html/.invoiceplane-version
 
 # Create necessary directories and set permissions
 RUN mkdir -p /var/www/html/uploads/archive \

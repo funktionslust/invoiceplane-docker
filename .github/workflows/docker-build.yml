@@ -11,68 +11,221 @@ on:
     branches:
       - main
   schedule:
-    # Run weekly to catch new InvoicePlane releases
-    - cron: '0 2 * * 0'
+    # Run daily at 2:00 AM UTC to catch new InvoicePlane releases
+    - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       invoiceplane_version:
-        description: 'InvoicePlane version to build (e.g., 1.6.3 or development)'
+        description: 'InvoicePlane version to build (e.g., 1.6.4). Leave empty to auto-detect missing versions.'
         required: false
         default: ''
+      force_rebuild:
+        description: 'Force rebuild even if tag exists'
+        required: false
+        default: 'false'
+        type: boolean
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  DOCKERHUB_REPO: funktionslust/invoiceplane
+  MAX_VERSIONS_TO_BUILD: 5
 
 jobs:
-  check-version:
-    name: Check for new InvoicePlane releases
+  detect-versions:
+    name: Detect versions to build
     runs-on: ubuntu-latest
     outputs:
-      latest_version: ${{ steps.get_version.outputs.latest_version }}
-      should_build: ${{ steps.check_build.outputs.should_build }}
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      latest_version: ${{ steps.set-matrix.outputs.latest_version }}
+      has_versions: ${{ steps.set-matrix.outputs.has_versions }}
     steps:
-      - name: Get latest InvoicePlane release
-        id: get_version
+      - name: Determine versions to build
+        id: set-matrix
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Fetch latest stable release (excluding pre-releases)
-          LATEST=$(curl -s https://api.github.com/repos/InvoicePlane/InvoicePlane/releases | \
-            jq -r '[.[] | select(.prerelease == false and .draft == false)] | .[0].tag_name' | \
-            sed 's/^v//')
-          echo "latest_version=${LATEST}" >> $GITHUB_OUTPUT
-          echo "Latest InvoicePlane version: ${LATEST}"
+          set -e
 
-      - name: Check if build needed
-        id: check_build
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || \
-             [ "${{ github.event_name }}" = "push" ] || \
-             [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "should_build=true" >> $GITHUB_OUTPUT
-          else
-            echo "should_build=true" >> $GITHUB_OUTPUT
+          # Get all stable releases from InvoicePlane (exclude pre-releases and drafts)
+          echo "Fetching InvoicePlane releases..."
+          RELEASES_RAW=$(curl -sf -H "Authorization: token $GH_TOKEN" \
+            https://api.github.com/repos/InvoicePlane/InvoicePlane/releases)
+
+          if [ -z "$RELEASES_RAW" ]; then
+            echo "::error::Failed to fetch releases from GitHub API"
+            exit 1
           fi
 
-  build-and-push:
-    name: Build Docker Image
+          RELEASES=$(echo "$RELEASES_RAW" | \
+            jq -r '[.[] | select(.prerelease == false and .draft == false) | .tag_name | ltrimstr("v")]')
+
+          if [ "$RELEASES" = "[]" ] || [ -z "$RELEASES" ]; then
+            echo "::error::No stable releases found"
+            exit 1
+          fi
+
+          echo "Available stable releases: $RELEASES"
+
+          # Get latest version (first in the list)
+          LATEST_VERSION=$(echo "$RELEASES" | jq -r '.[0]')
+          echo "Latest version: $LATEST_VERSION"
+          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+
+          # Handle manual version input
+          if [ -n "${{ github.event.inputs.invoiceplane_version }}" ]; then
+            MANUAL_VERSION="${{ github.event.inputs.invoiceplane_version }}"
+            echo "Manual version requested: $MANUAL_VERSION"
+            VERSIONS_TO_BUILD="[\"$MANUAL_VERSION\"]"
+          else
+            # Get existing Docker Hub tags (with pagination)
+            echo "Fetching existing Docker Hub tags..."
+            EXISTING_TAGS="[]"
+            NEXT_URL="https://hub.docker.com/v2/repositories/${{ env.DOCKERHUB_REPO }}/tags?page_size=100"
+
+            while [ -n "$NEXT_URL" ] && [ "$NEXT_URL" != "null" ]; do
+              RESPONSE=$(curl -sf "$NEXT_URL" || echo '{"results":[]}')
+              PAGE_TAGS=$(echo "$RESPONSE" | jq -r '[.results[].name] // []')
+              EXISTING_TAGS=$(jq -n --argjson a "$EXISTING_TAGS" --argjson b "$PAGE_TAGS" '$a + $b')
+              NEXT_URL=$(echo "$RESPONSE" | jq -r '.next // empty')
+            done
+
+            echo "Existing Docker Hub tags: $EXISTING_TAGS"
+
+            # Find versions that don't have Docker images yet
+            if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+              echo "Force rebuild requested - building all versions"
+              VERSIONS_TO_BUILD="$RELEASES"
+            else
+              VERSIONS_TO_BUILD=$(jq -n \
+                --argjson releases "$RELEASES" \
+                --argjson existing "$EXISTING_TAGS" \
+                '$releases - $existing')
+            fi
+          fi
+
+          echo "Versions to build (before limit): $VERSIONS_TO_BUILD"
+
+          # Limit number of versions to build
+          VERSION_COUNT=$(echo "$VERSIONS_TO_BUILD" | jq 'length')
+          if [ "$VERSION_COUNT" -gt "${{ env.MAX_VERSIONS_TO_BUILD }}" ]; then
+            echo "::warning::Limiting builds to ${{ env.MAX_VERSIONS_TO_BUILD }} versions (found $VERSION_COUNT)"
+            VERSIONS_TO_BUILD=$(echo "$VERSIONS_TO_BUILD" | jq '.[:${{ env.MAX_VERSIONS_TO_BUILD }}]')
+          fi
+
+          echo "Versions to build: $VERSIONS_TO_BUILD"
+
+          # Check if there are versions to build
+          VERSION_COUNT=$(echo "$VERSIONS_TO_BUILD" | jq 'length')
+          if [ "$VERSION_COUNT" -eq 0 ]; then
+            echo "No new versions to build"
+            echo "has_versions=false" >> $GITHUB_OUTPUT
+            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+          else
+            echo "has_versions=true" >> $GITHUB_OUTPUT
+
+            # Build matrix with version info
+            MATRIX=$(echo "$VERSIONS_TO_BUILD" | jq -c --arg latest "$LATEST_VERSION" '{
+              include: [.[] | {
+                version: .,
+                is_latest: (. == $latest)
+              }]
+            }')
+
+            echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          fi
+
+  build-stable:
+    name: Build ${{ matrix.version }}
     runs-on: ubuntu-latest
-    needs: check-version
-    if: needs.check-version.outputs.should_build == 'true'
+    needs: detect-versions
+    if: needs.detect-versions.outputs.has_versions == 'true'
     permissions:
       contents: read
       packages: write
     strategy:
-      matrix:
-        include:
-          - version: ${{ needs.check-version.outputs.latest_version }}
-            tags: |
-              type=raw,value=latest
-              type=raw,value=${{ needs.check-version.outputs.latest_version }}
-              type=raw,value=production
-          - version: development
-            tags: |
-              type=raw,value=development
-              type=raw,value=dev
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-versions.outputs.matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Generate tags
+        id: tags
+        run: |
+          VERSION="${{ matrix.version }}"
+          IS_LATEST="${{ matrix.is_latest }}"
+
+          # Base tags - always include version
+          TAGS="type=raw,value=${VERSION}"
+
+          # Add latest and production tags only for the latest version
+          if [ "$IS_LATEST" = "true" ]; then
+            TAGS="${TAGS}
+          type=raw,value=latest
+          type=raw,value=production"
+          fi
+
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/invoiceplane
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=InvoicePlane
+            org.opencontainers.image.description=Self-hosted open source invoicing application
+            org.opencontainers.image.vendor=Funktionslust
+            org.opencontainers.image.version=${{ matrix.version }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            INVOICEPLANE_VERSION=${{ matrix.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-development:
+    name: Build development
+    runs-on: ubuntu-latest
+    needs: detect-versions
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -105,12 +258,14 @@ jobs:
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
             ${{ secrets.DOCKERHUB_USERNAME }}/invoiceplane
-          tags: ${{ matrix.tags }}
+          tags: |
+            type=raw,value=development
+            type=raw,value=dev
           labels: |
             org.opencontainers.image.title=InvoicePlane
-            org.opencontainers.image.description=Self-hosted open source invoicing application
+            org.opencontainers.image.description=Self-hosted open source invoicing application (development)
             org.opencontainers.image.vendor=Funktionslust
-            org.opencontainers.image.version=${{ matrix.version }}
+            org.opencontainers.image.version=development
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -121,15 +276,17 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            INVOICEPLANE_VERSION=${{ matrix.version }}
+            INVOICEPLANE_VERSION=development
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   test:
     name: Test Docker Image
     runs-on: ubuntu-latest
-    needs: build-and-push
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    needs: [build-stable, build-development]
+    if: |
+      !failure() && !cancelled() &&
+      (github.event_name == 'pull_request' || github.event_name == 'push')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
