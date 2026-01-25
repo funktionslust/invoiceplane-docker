@@ -30,6 +30,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   DOCKERHUB_REPO: funktionslust/invoiceplane
   MAX_VERSIONS_TO_BUILD: 5
+  MIN_VERSION: "1.6.0"
 
 jobs:
   detect-versions:
@@ -65,7 +66,11 @@ jobs:
             exit 1
           fi
 
-          echo "Available stable releases: $RELEASES"
+          # Filter out versions below MIN_VERSION
+          MIN_VERSION="${{ env.MIN_VERSION }}"
+          RELEASES=$(echo "$RELEASES" | jq --arg min "$MIN_VERSION" '[.[] | select(. >= $min)]')
+
+          echo "Available stable releases (>= $MIN_VERSION): $RELEASES"
 
           # Get latest version (first in the list)
           LATEST_VERSION=$(echo "$RELEASES" | jq -r '.[0]')
@@ -279,6 +284,104 @@ jobs:
             INVOICEPLANE_VERSION=development
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  update-readme:
+    name: Update README tags
+    runs-on: ubuntu-latest
+    needs: [detect-versions, build-stable, build-development]
+    if: |
+      always() &&
+      needs.detect-versions.result == 'success' &&
+      github.event_name != 'pull_request'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Update README with current tags
+        id: update
+        env:
+          MIN_VERSION: ${{ env.MIN_VERSION }}
+          DOCKERHUB_REPO: ${{ env.DOCKERHUB_REPO }}
+        run: |
+          python3 << 'EOF'
+          import json, re, os, urllib.request, sys
+
+          repo = os.environ.get("DOCKERHUB_REPO", "funktionslust/invoiceplane")
+          url = f"https://hub.docker.com/v2/repositories/{repo}/tags?page_size=100"
+
+          try:
+              with urllib.request.urlopen(url, timeout=30) as response:
+                  data = json.loads(response.read().decode())
+          except Exception as e:
+              print(f"Warning: Failed to fetch Docker Hub tags: {e}")
+              sys.exit(0)
+
+          min_ver = os.environ.get("MIN_VERSION", "1.6.0")
+          versions = []
+          for tag in data.get("results", []):
+              name = tag["name"]
+              if re.match(r"^\d+\.\d+\.\d+$", name) and name >= min_ver:
+                  versions.append(name)
+
+          versions.sort(key=lambda v: list(map(int, v.split("."))), reverse=True)
+
+          if not versions:
+              print("No version tags found, skipping README update")
+              sys.exit(0)
+
+          versions_str = "`, `".join(versions)
+
+          new_table = f"""<!-- TAGS_START -->
+          | Tag | Description |
+          |-----|-------------|
+          | `latest`, `production` | Latest stable release |
+          | `{versions_str}` | Specific versions |
+          | `development`, `dev` | Development branch |
+          <!-- TAGS_END -->"""
+          new_table = "\n".join(line.strip() for line in new_table.strip().split("\n"))
+
+          with open("README.md", "r") as f:
+              content = f.read()
+
+          pattern = r"<!-- TAGS_START -->.*?<!-- TAGS_END -->"
+          new_content = re.sub(pattern, new_table, content, flags=re.DOTALL)
+
+          with open("README.md", "w") as f:
+              f.write(new_content)
+
+          print(f"Updated README with versions: {versions_str}")
+          EOF
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet README.md; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "Update README tags"
+          git push
+
+      - name: Update Docker Hub description
+        if: steps.changes.outputs.changed == 'true' || github.event_name == 'schedule'
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.DOCKERHUB_REPO }}
+          readme-filepath: ./README.md
 
   test:
     name: Test Docker Image

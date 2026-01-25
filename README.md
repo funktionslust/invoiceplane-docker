@@ -3,19 +3,22 @@
 [![Docker Version](https://img.shields.io/docker/v/funktionslust/invoiceplane/latest?label=docker)](https://hub.docker.com/r/funktionslust/invoiceplane)
 [![Docker Pulls](https://img.shields.io/docker/pulls/funktionslust/invoiceplane)](https://hub.docker.com/r/funktionslust/invoiceplace)
 
-Since there's no official InvoicePlane Docker image and the most popular community images are years outdated while more recent ones lack proper maintenance, this repository provides a production-ready, well-maintained Docker image for [InvoicePlane](https://invoiceplane.com/) - the self-hosted open source invoicing application.
+Production-ready Docker image for [InvoicePlane v1](https://github.com/InvoicePlane/InvoicePlane) - the self-hosted open source invoicing application.
+
+> **Note:** This image is for InvoicePlane v1.x. [InvoicePlane v2](https://github.com/InvoicePlane/InvoicePlane-v2) is a separate project currently in development.
 
 **GitHub:** [https://github.com/funktionslust/invoiceplane-docker](https://github.com/funktionslust/invoiceplane-docker)
 
 **Docker Hub:** [https://hub.docker.com/r/funktionslust/invoiceplane](https://hub.docker.com/r/funktionslust/invoiceplane)
 
 **Tags:**
-- `latest`, `1.6.3`, `production` - Stable release (InvoicePlane v1.6.3)
+- `latest`, `production` - Latest stable InvoicePlane release
+- `1.x.x` - Specific version tags (all stable releases >= 1.6.0)
 - `development`, `dev` - Development branch (bleeding edge)
 
 ## Features
 
-- InvoicePlane v1.6.3 (latest stable) and development branch
+- All stable InvoicePlane releases (automatically built)
 - E-Invoice Support
 - Multi-architecture: linux/amd64 and linux/arm64
 - PHP 8.1 with Apache on Debian Bookworm
@@ -127,18 +130,19 @@ For more information: [InvoicePlane E-Invoices Repository](https://github.com/In
 
 ## Docker Image Tags
 
-Available on both [Docker Hub](https://hub.docker.com/r/funktionslust/invoiceplane) and [GitHub Container Registry](https://github.com/funktionslust/invoiceplane-docker/pkgs/container/invoiceplane-docker):
+Available on both [Docker Hub](https://hub.docker.com/r/funktionslust/invoiceplane/tags) and [GitHub Container Registry](https://github.com/funktionslust/invoiceplane-docker/pkgs/container/invoiceplane-docker):
+
+<!-- TAGS_START -->
+| Tag | Description |
+|-----|-------------|
+| `latest`, `production` | Latest stable release |
+| `1.7.0`, `1.6.4`, `1.6.3`, `1.6.2`, `1.6.1`, `1.6.0` | Specific versions |
+| `development`, `dev` | Development branch |
+<!-- TAGS_END -->
 
 ```bash
-# Docker Hub
 docker pull funktionslust/invoiceplane:latest
-docker pull funktionslust/invoiceplane:1.6.3
 docker pull funktionslust/invoiceplane:development
-
-# GitHub Container Registry
-docker pull ghcr.io/funktionslust/invoiceplane-docker:latest
-docker pull ghcr.io/funktionslust/invoiceplane-docker:1.6.3
-docker pull ghcr.io/funktionslust/invoiceplane-docker:development
 ```
 
 ## License
