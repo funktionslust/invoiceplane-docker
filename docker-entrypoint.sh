@@ -263,6 +263,7 @@ set_permissions() {
     mkdir -p /var/www/html/uploads/archive \
              /var/www/html/uploads/customer_files \
              /var/www/html/uploads/temp \
+             /var/www/html/uploads/temp/mpdf \
              /var/www/html/application/logs
 
     # Set ownership
@@ -291,6 +292,7 @@ setup_timezone() {
 # Function to configure proxy networks
 configure_proxy_networks() {
     local apache_conf="/etc/apache2/sites-available/000-default.conf"
+    local https_conf="/etc/apache2/conf-available/https-detection.conf"
 
     if [ -n "${PROXY_NETWORKS}" ]; then
         log "Configuring trusted proxy networks: ${PROXY_NETWORKS}"
@@ -298,11 +300,34 @@ configure_proxy_networks() {
         # Remove existing RemoteIPInternalProxy lines if any
         sed -i '/RemoteIPInternalProxy/d' "${apache_conf}"
 
+        # Build the If condition for secure HTTPS detection
+        # Only trust X-Forwarded-Proto header from trusted proxy networks
+        local if_condition=""
+
         # Add new RemoteIPInternalProxy directives after RemoteIPHeader
         for network in ${PROXY_NETWORKS}; do
             log "  Adding trusted proxy network: ${network}"
             sed -i "/RemoteIPHeader X-Forwarded-For/a \    RemoteIPInternalProxy ${network}" "${apache_conf}"
+
+            # Build condition for HTTPS detection
+            if [ -n "${if_condition}" ]; then
+                if_condition="${if_condition} || "
+            fi
+            if_condition="${if_condition}%{CONN_REMOTE_ADDR} -ipmatch '${network}'"
         done
+
+        # Create secure HTTPS detection config
+        # Only trust X-Forwarded-Proto from connections originating from trusted proxy networks
+        log "Configuring secure HTTPS detection behind reverse proxy"
+        cat > "${https_conf}" << EOF
+# Secure HTTPS detection behind reverse proxy
+# Only trust X-Forwarded-Proto header when connection comes from trusted proxy networks
+# CONN_REMOTE_ADDR is the actual connecting IP (before mod_remoteip processing)
+<If "${if_condition}">
+    SetEnvIf X-Forwarded-Proto "https" HTTPS=on
+</If>
+EOF
+        a2enconf https-detection > /dev/null 2>&1
 
         log "Proxy network configuration complete"
     else
