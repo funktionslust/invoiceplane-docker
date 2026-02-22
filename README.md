@@ -136,7 +136,7 @@ Available on both [Docker Hub](https://hub.docker.com/r/funktionslust/invoicepla
 | Tag | Description |
 |-----|-------------|
 | `latest`, `production` | Latest stable release |
-| `1.7.0`, `1.6.4`, `1.6.3`, `1.6.2`, `1.6.1`, `1.6.0` | Specific versions |
+| `1.7.1`, `1.7.0`, `1.6.5`, `1.6.4`, `1.6.3`, `1.6.2`, `1.6.1`, `1.6.0` | Specific versions |
 | `development`, `dev` | Development branch |
 <!-- TAGS_END -->
 
